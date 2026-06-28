@@ -283,7 +283,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
         scoreA: nextScoreA,
         scoreB: nextScoreB,
         isMatchOver: isMatchOverAfterSet,
-        countdown: 3,
+        countdown: 10,
       });
     } else {
       if (audioEnabled) {
@@ -692,7 +692,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
             <motion.div
               initial={{ width: "100%" }}
               animate={{ width: "0%" }}
-              transition={{ duration: 3, ease: "linear" }}
+              transition={{ duration: 10, ease: "linear" }}
               className="bg-gradient-to-r from-amber-400 via-violet-500 to-cyan-400 h-full"
             />
           </div>
