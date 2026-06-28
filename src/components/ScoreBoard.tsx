@@ -22,6 +22,8 @@ import {
   CheckCircle,
   Pencil,
   X,
+  Sparkles,
+  Award,
 } from "lucide-react";
 
 interface ScoreBoardProps {
@@ -96,6 +98,15 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
   // Timer Ref & State
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Transition Delay State between sets
+  const [pendingTransition, setPendingTransition] = useState<{
+    winner: "A" | "B";
+    scoreA: number;
+    scoreB: number;
+    isMatchOver: boolean;
+    countdown: number;
+  } | null>(null);
 
   // Start Timer
   useEffect(() => {
@@ -172,9 +183,119 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
     return [...currentState.history, snap];
   };
 
+  // Commit the set transition when the countdown reaches 0
+  const commitSetTransition = () => {
+    if (!pendingTransition) return;
+
+    const { winner, scoreA, scoreB, isMatchOver } = pendingTransition;
+
+    setState((prev) => {
+      const newSetResult: SetScore = {
+        scoreA,
+        scoreB,
+        winner,
+      };
+      const nextSetScores = [...prev.setScores, newSetResult];
+      const nextHistory = saveUndoState(prev);
+
+      if (isMatchOver) {
+        if (audioEnabled) playSound("buzzer");
+        return {
+          ...prev,
+          setScores: nextSetScores,
+          isMatchOver: true,
+          history: nextHistory,
+        };
+      } else {
+        const nextSetIndex = prev.currentSetIndex + 1;
+        if (audioEnabled) playSound("special");
+
+        // Swap court sides on set transition (pindah lapangan)
+        const nextCourtSides = {
+          leftTeam: prev.courtSides.leftTeam === "A" ? "B" : "A",
+          rightTeam: prev.courtSides.rightTeam === "A" ? "B" : "A",
+        };
+
+        return {
+          ...prev,
+          currentSetIndex: nextSetIndex,
+          setScores: nextSetScores,
+          currentScoreA: 0,
+          currentScoreB: 0,
+          servingTeam: winner, // Winner of previous set serves first
+          servingPlayerIndex: 0,
+          receivingPlayerIndex: 0,
+          courtSides: nextCourtSides,
+          history: nextHistory,
+        };
+      }
+    });
+
+    setPendingTransition(null);
+  };
+
+  // Countdown effect for set transition
+  useEffect(() => {
+    if (!pendingTransition) return;
+
+    if (pendingTransition.countdown > 0) {
+      const timer = setTimeout(() => {
+        setPendingTransition((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            countdown: prev.countdown - 1,
+          };
+        });
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else {
+      commitSetTransition();
+    }
+  }, [pendingTransition?.countdown]);
+
   // Game / Point Logic
   const addPoint = (team: "A" | "B") => {
-    if (state.isMatchOver) return;
+    if (state.isMatchOver || pendingTransition) return;
+
+    const nextScoreA = team === "A" ? state.currentScoreA + 1 : state.currentScoreA;
+    const nextScoreB = team === "B" ? state.currentScoreB + 1 : state.currentScoreB;
+    const { isSetOver, setWinner } = checkSetStatus(nextScoreA, nextScoreB);
+
+    if (isSetOver && setWinner) {
+      if (audioEnabled) {
+        playSound("clapping");
+      }
+
+      const newSetResult: SetScore = {
+        scoreA: nextScoreA,
+        scoreB: nextScoreB,
+        winner: setWinner,
+      };
+      const nextSetScores = [...state.setScores, newSetResult];
+      const setsWonA = nextSetScores.filter((s) => s.winner === "A").length;
+      const setsWonB = nextSetScores.filter((s) => s.winner === "B").length;
+      const targetSetsToWin = Math.ceil(settings.bestOfSets / 2);
+      const isMatchOverAfterSet = setsWonA === targetSetsToWin || setsWonB === targetSetsToWin;
+
+      setPendingTransition({
+        winner: setWinner,
+        scoreA: nextScoreA,
+        scoreB: nextScoreB,
+        isMatchOver: isMatchOverAfterSet,
+        countdown: 3,
+      });
+    } else {
+      if (audioEnabled) {
+        const isGamePointA = nextScoreA >= settings.targetPoints - 1 && nextScoreA > nextScoreB;
+        const isGamePointB = nextScoreB >= settings.targetPoints - 1 && nextScoreB > nextScoreA;
+        if (isGamePointA || isGamePointB) {
+          playSound("special");
+        } else {
+          playSound("point");
+        }
+      }
+    }
 
     setState((prev) => {
       const nextHistory = saveUndoState(prev);
@@ -229,86 +350,19 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
           nextServingTeam = prev.servingTeam === "A" ? "B" : "A";
           if (isDoubles) {
             // 100% Accurate ITTF standard doubles rotation sequence:
-            // 1. A0 -> B0 (Team A Player 0 serves to Team B Player 0)
-            // 2. B0 -> A1 (Team B Player 0 serves to Team A Player 1)
-            // 3. A1 -> B1 (Team A Player 1 serves to Team B Player 1)
-            // 4. B1 -> A0 (Team B Player 1 serves to Team A Player 0)
             if (prev.servingTeam === "A" && prev.servingPlayerIndex === 0) {
-              // From (A0 -> B0) to (B0 -> A1)
               nextServingPlayer = 0;
               nextReceivingPlayer = 1;
             } else if (prev.servingTeam === "B" && prev.servingPlayerIndex === 0) {
-              // From (B0 -> A1) to (A1 -> B1)
               nextServingPlayer = 1;
               nextReceivingPlayer = 1;
             } else if (prev.servingTeam === "A" && prev.servingPlayerIndex === 1) {
-              // From (A1 -> B1) to (B1 -> A0)
               nextServingPlayer = 1;
               nextReceivingPlayer = 0;
             } else {
-              // From (B1 -> A0) to (A0 -> B0)
               nextServingPlayer = 0;
               nextReceivingPlayer = 0;
             }
-          }
-        }
-      }
-
-      // Check if current set is over
-      const { isSetOver, setWinner } = checkSetStatus(nextScoreA, nextScoreB);
-
-      let nextSetIndex = prev.currentSetIndex;
-      let nextSetScores = [...prev.setScores];
-      let nextIsMatchOver = prev.isMatchOver;
-
-      if (isSetOver && setWinner) {
-        // Add completed set score
-        const newSetResult: SetScore = {
-          scoreA: nextScoreA,
-          scoreB: nextScoreB,
-          winner: setWinner,
-        };
-        nextSetScores.push(newSetResult);
-
-        // Play clapping sound effect when a game completes
-        if (audioEnabled) {
-          playSound("clapping");
-        }
-
-        // Count won sets for each team
-        const setsWonA = nextSetScores.filter((s) => s.winner === "A").length;
-        const setsWonB = nextSetScores.filter((s) => s.winner === "B").length;
-
-        const targetSetsToWin = Math.ceil(settings.bestOfSets / 2);
-
-        if (setsWonA === targetSetsToWin || setsWonB === targetSetsToWin) {
-          // Match over!
-          nextIsMatchOver = true;
-          if (audioEnabled) playSound("buzzer");
-        } else {
-          // Set over but match continues -> advance to next set & reset score counters
-          nextSetIndex += 1;
-          nextScoreA = 0;
-          nextScoreB = 0;
-          nextServingPlayer = 0;
-          nextReceivingPlayer = 0;
-          if (audioEnabled) playSound("special");
-
-          // Auto swap court sides on set transition (pindah lapangan)
-          prev.courtSides = {
-            leftTeam: prev.courtSides.leftTeam === "A" ? "B" : "A",
-            rightTeam: prev.courtSides.rightTeam === "A" ? "B" : "A",
-          };
-        }
-      } else {
-        // Play simple scoring sound feedback
-        if (audioEnabled) {
-          const isGamePointA = nextScoreA >= settings.targetPoints - 1 && nextScoreA > nextScoreB;
-          const isGamePointB = nextScoreB >= settings.targetPoints - 1 && nextScoreB > nextScoreA;
-          if (isGamePointA || isGamePointB) {
-            playSound("special");
-          } else {
-            playSound("point");
           }
         }
       }
@@ -320,6 +374,22 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
         const isServiceChanged = prev.servingTeam !== nextServingTeam;
         const rawScoreA = team === "A" ? prev.currentScoreA + 1 : prev.currentScoreA;
         const rawScoreB = team === "B" ? prev.currentScoreB + 1 : prev.currentScoreB;
+
+        let nextIsMatchOver = prev.isMatchOver;
+        if (isSetOver && setWinner) {
+          const newSetResult: SetScore = {
+            scoreA: nextScoreA,
+            scoreB: nextScoreB,
+            winner: setWinner,
+          };
+          const nextSetScores = [...prev.setScores, newSetResult];
+          const setsWonA = nextSetScores.filter((s) => s.winner === "A").length;
+          const setsWonB = nextSetScores.filter((s) => s.winner === "B").length;
+          const targetSetsToWin = Math.ceil(settings.bestOfSets / 2);
+          if (setsWonA === targetSetsToWin || setsWonB === targetSetsToWin) {
+            nextIsMatchOver = true;
+          }
+        }
 
         announceScoreIndonesian(
           nextScoreA,
@@ -344,14 +414,11 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
 
       return {
         ...prev,
-        currentSetIndex: nextSetIndex,
-        setScores: nextSetScores,
         currentScoreA: nextScoreA,
         currentScoreB: nextScoreB,
         servingTeam: nextServingTeam,
         servingPlayerIndex: nextServingPlayer,
         receivingPlayerIndex: nextReceivingPlayer,
-        isMatchOver: nextIsMatchOver,
         history: nextHistory,
       };
     });
@@ -359,6 +426,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
 
   // Subtract Point
   const subtractPoint = (team: "A" | "B") => {
+    setPendingTransition(null);
     setState((prev) => {
       const currentScore = team === "A" ? prev.currentScoreA : prev.currentScoreB;
       if (currentScore === 0) return prev; // Cannot go below zero
@@ -376,6 +444,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
 
   // Undo Functionality
   const triggerUndo = () => {
+    setPendingTransition(null);
     setState((prev) => {
       if (prev.history.length === 0) return prev;
       const lastIndex = prev.history.length - 1;
@@ -400,6 +469,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
 
   // Reset current set score
   const triggerReset = () => {
+    setPendingTransition(null);
     if (window.confirm("Apakah Anda yakin ingin menyetel ulang skor game ini kembali ke 0 - 0?")) {
       setState((prev) => {
         const nextHistory = saveUndoState(prev);
@@ -578,6 +648,55 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
             ))}
           </div>
         </div>
+      )}
+
+      {/* SET TRANSITION BANNER */}
+      {pendingTransition && (
+        <motion.div
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          className="bg-gradient-to-r from-amber-500/15 via-violet-500/20 to-cyan-500/15 border-2 border-amber-500/50 p-6 rounded-2xl text-center shadow-2xl flex flex-col items-center justify-center gap-2 relative overflow-hidden backdrop-blur-md"
+        >
+          {/* Subtle pulse background */}
+          <div className="absolute inset-0 bg-amber-500/5 animate-pulse pointer-events-none" />
+          
+          <div className="flex items-center gap-2.5 relative z-10">
+            <Sparkles className="w-5 h-5 text-amber-400 animate-spin" />
+            <h3 className="text-lg font-black tracking-widest text-amber-400 uppercase">
+              SET {state.currentSetIndex + 1} SELESAI!
+            </h3>
+            <Sparkles className="w-5 h-5 text-amber-400 animate-spin" />
+          </div>
+          
+          <p className="text-sm font-semibold text-slate-200 relative z-10">
+            Dimenangkan oleh:{" "}
+            <strong className={`${pendingTransition.winner === "A" ? "text-amber-400" : "text-cyan-400"} text-base font-black`}>
+              {pendingTransition.winner === "A" ? teamANameLabel : teamBNameLabel}
+            </strong>{" "}
+            dengan skor{" "}
+            <strong className="text-white font-mono text-lg px-2 py-0.5 rounded bg-slate-950/80 border border-slate-800">
+              {pendingTransition.scoreA} - {pendingTransition.scoreB}
+            </strong>
+          </p>
+
+          <div className="flex items-center gap-2 mt-2 text-xs text-slate-400 font-bold uppercase relative z-10">
+            <span>{pendingTransition.isMatchOver ? "Menyiapkan hasil akhir" : "Pergantian lapangan & Reset skor"} dalam</span>
+            <span className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-slate-950 flex items-center justify-center font-black text-sm shadow shadow-amber-500/50 animate-bounce">
+              {pendingTransition.countdown}
+            </span>
+            <span>detik</span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full max-w-xs bg-slate-950 h-2 rounded-full mt-3 overflow-hidden border border-slate-800 relative z-10">
+            <motion.div
+              initial={{ width: "100%" }}
+              animate={{ width: "0%" }}
+              transition={{ duration: 3, ease: "linear" }}
+              className="bg-gradient-to-r from-amber-400 via-violet-500 to-cyan-400 h-full"
+            />
+          </div>
+        </motion.div>
       )}
 
       {/* MATCH OVER SPLASH COVER */}
