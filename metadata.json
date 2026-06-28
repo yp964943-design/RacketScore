@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Skor Bulu Tangkis dan Tenis Meja",
+  "description": "Aplikasi pencatat skor interaktif untuk olahraga bulu tangkis (badminton) dan tenis meja (pingpong) dengan visualisasi lapangan, aturan deuce otomatis, sistem kidal/pindah lapangan, suara pengumuman, dan riwayat pertandingan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
