@@ -20,12 +20,12 @@ export function playSound(type: "point" | "special" | "buzzer" | "whistle" | "cl
     const now = ctx.currentTime;
 
     if (type === "clapping") {
-      // Synthesize realistic applause/clapping purely using Web Audio API
-      const duration = 2.2; // seconds of clapping
-      const numClaps = 35;  // 35 scattered claps
+      // Synthesize rich, realistic applause/clapping purely using Web Audio API
+      const duration = 3.0; // 3 seconds of clapping
+      const numClaps = 60;  // 60 scattered claps to sound like a crowd
       
       // Create a single noise buffer for efficiency
-      const bufferSize = ctx.sampleRate * 0.12; // 120ms of noise per clap
+      const bufferSize = ctx.sampleRate * 0.15; // 150ms of noise per clap
       const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = noiseBuffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
@@ -33,32 +33,54 @@ export function playSound(type: "point" | "special" | "buzzer" | "whistle" | "cl
       }
       
       for (let i = 0; i < numClaps; i++) {
-        // Random time offset within the duration
-        const clapTime = now + Math.random() * duration;
+        // Random time offset within the duration, slightly denser in the first half
+        const rand = Math.random();
+        const clapTime = now + (rand * rand) * duration;
         
+        // Component 1: High-frequency crisp hand slap (filtered noise)
         const noise = ctx.createBufferSource();
         noise.buffer = noiseBuffer;
         
         const filter = ctx.createBiquadFilter();
         filter.type = "bandpass";
-        // Slightly vary bandpass center frequency for natural sounding clap dispersion
-        filter.frequency.setValueAtTime(1100 + Math.random() * 500, clapTime);
-        filter.Q.setValueAtTime(2.0, clapTime);
+        // Vary bandpass center frequency for natural sounding hand size and speed dispersion
+        filter.frequency.setValueAtTime(900 + Math.random() * 800, clapTime);
+        filter.Q.setValueAtTime(3.0, clapTime);
         
-        const gainNode = ctx.createGain();
-        // Volume slightly decreases as clapping goes on (natural fade-out)
-        const volumeMultiplier = 1.0 - (clapTime - now) / duration * 0.4;
-        const individualVolume = (0.04 + Math.random() * 0.08) * volumeMultiplier;
+        const noiseGain = ctx.createGain();
+        // Volume slightly decreases over time
+        const volumeMultiplier = Math.max(0.15, 1.0 - (clapTime - now) / duration);
+        const noiseVol = (0.15 + Math.random() * 0.2) * volumeMultiplier;
         
-        gainNode.gain.setValueAtTime(individualVolume, clapTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, clapTime + 0.03 + Math.random() * 0.04);
+        noiseGain.gain.setValueAtTime(noiseVol, clapTime);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, clapTime + 0.04 + Math.random() * 0.06);
         
         noise.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(ctx.destination);
+        filter.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
         
         noise.start(clapTime);
-        noise.stop(clapTime + 0.12);
+        noise.stop(clapTime + 0.15);
+
+        // Component 2: Low-frequency warm thump (the hand cavity resonance)
+        if (Math.random() > 0.25) {
+          const osc = ctx.createOscillator();
+          const thumpGain = ctx.createGain();
+          
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(140 + Math.random() * 90, clapTime);
+          osc.frequency.exponentialRampToValueAtTime(70, clapTime + 0.03);
+          
+          const thumpVol = (0.08 + Math.random() * 0.12) * volumeMultiplier;
+          thumpGain.gain.setValueAtTime(thumpVol, clapTime);
+          thumpGain.gain.exponentialRampToValueAtTime(0.001, clapTime + 0.035);
+          
+          osc.connect(thumpGain);
+          thumpGain.connect(ctx.destination);
+          
+          osc.start(clapTime);
+          osc.stop(clapTime + 0.04);
+        }
       }
       return;
     }

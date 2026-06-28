@@ -652,8 +652,9 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
               )}
 
               {/* Set counter display */}
-              <div className="absolute top-3 right-4 font-mono text-[11px] font-bold text-slate-400">
-                SET MENANG: {leftSetsWon}
+              <div className="absolute top-3 right-4 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-black tracking-wider text-slate-200 shadow flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">SET MENANG:</span>
+                <span className={`text-xl font-black font-sans ${leftTeamKey === "A" ? "text-amber-400" : "text-cyan-400"}`}>{leftSetsWon}</span>
               </div>
 
               {/* Team Name */}
@@ -733,8 +734,9 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({ settings, onFinishMatch,
               )}
 
               {/* Set counter display */}
-              <div className="absolute top-3 right-4 font-mono text-[11px] font-bold text-slate-400">
-                SET MENANG: {rightSetsWon}
+              <div className="absolute top-3 right-4 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-black tracking-wider text-slate-200 shadow flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">SET MENANG:</span>
+                <span className={`text-xl font-black font-sans ${rightTeamKey === "A" ? "text-amber-400" : "text-cyan-400"}`}>{rightSetsWon}</span>
               </div>
 
               {/* Team Name */}
